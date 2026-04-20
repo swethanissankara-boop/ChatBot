@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Getting to Know You</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="onboarding-body">
+
+<div class="onboarding-container">
+
+    <div class="onboarding-card">
+        <h2>🎓 Let's Personalize Your Support</h2>
+        <p class="sub-text">
+            Answer a few quick questions so I can support you better 
+        </p>
+
+        <!-- Progress Bar -->
+        <div class="progress-bar">
+            <div class="progress" style="width: {{ progress_percent }}%;"></div>
+        </div>
+
+        <form method="POST" class="onboarding-form">
+            <div class="question-box">
+                <p class="question-text">{{ question_text }}</p>
+            </div>
+
+            <input type="hidden" name="question_id" value="{{ question_id }}">
+
+            <input type="text" name="answer" 
+                   placeholder="Type your answer here..." 
+                   required>
+
+            <button type="submit">Next →</button>
+        </form>
+    </div>
+
+</div>
+
+<script>
+    // Simple fade animation
+    document.querySelector(".onboarding-card").style.opacity = 0;
+    setTimeout(() => {
+        document.querySelector(".onboarding-card").style.opacity = 1;
+    }, 200);
+</script>
+
+</body>
+</html>

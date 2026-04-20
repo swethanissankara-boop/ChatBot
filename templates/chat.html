@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Exam Stress Chatbot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+
+<body>
+
+<div class="main-layout">
+
+    <div class="sidebar">
+        <h2>🧠 StressBot</h2>
+        <p class="user-name">Hello {{ name }} 👋</p>
+        <p class="level">Level: {{ level }}</p>
+
+        <hr>
+
+        <a href="/dashboard">📊 Dashboard</a>
+        <a href="/clear_chat">🧹 Clear Chat</a>
+        <a href="/logout">🚪 Logout</a>
+
+        <hr>
+
+        <div class="sidebar-relax">
+            <h4>🧘 Calm</h4>
+            <button onclick="startMeditation()">Start</button>
+            <button onclick="stopMeditation()">Stop</button>
+            <audio id="meditationPlayer"></audio>
+
+            <hr>
+
+            <h4>🌿 Breathe</h4>
+            <div class="breathing-circle-small" id="circle"></div>
+            <button onclick="startBreathing()">Start</button>
+            <button onclick="stopBreathing()">Stop</button>
+            <p id="breathText">Press Start</p>
+
+            <hr>
+            
+            <h4>🎮 Fun & Relax</h4>
+            <p style="font-size: 12px; color: #555;">Pick a quick game to unwind:</p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button onclick="startPeerMatch()" style="cursor: pointer; background: #9c27b0; color: white; padding: 10px; border: none; border-radius: 5px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🤝 Play & Chat with a Peer</button>
+                
+                <button onclick="openTicTacToe()" style="cursor: pointer; background: #4CAF50; color: white; padding: 8px; border: none; border-radius: 5px;">❌ Solo Tic-Tac-Toe</button>
+                <button onclick="openRPS()" style="cursor: pointer; background: #008CBA; color: white; padding: 8px; border: none; border-radius: 5px;">✂️ Rock Paper Scissors</button>
+                <button onclick="openBubbleWrap()" style="cursor: pointer; background: #ff9800; color: white; padding: 8px; border: none; border-radius: 5px;">🔵 Pop Bubble Wrap</button>
+                <button onclick="openBrainDump()" style="cursor: pointer; background: #e91e63; color: white; padding: 10px; border: none; border-radius: 5px; font-weight: bold; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🗑️ Brain Dump & Shred</button>
+            </div>
+            
+            <hr>
+
+            <h4>📷 Emotion</h4>
+            <button onclick="startCamera()">Start Camera</button>
+            <button onclick="stopCamera()">Stop Camera</button>
+        </div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header">
+            <h2>Exam Stress Support Chatbot</h2>
+        </div>
+
+        {% if risk_alert %}
+        <div class="risk-alert">
+            ⚠ <strong>Risk Alert:</strong>
+            You seem consistently overwhelmed.
+            Consider taking a short break or speaking to a mentor.
+        </div>
+        {% endif %}
+
+        <div class="chat-box">
+            {% for chat in chats %}
+                {% if chat[1] == "user" %}
+                <div class="user-message" id="msg-container-{{ chat[0] }}">
+                    <div class="user-bubble" style="display: flex; align-items: center; gap: 8px;">
+                        <span id="msg-text-{{ chat[0] }}">{{ chat[2]|safe }}</span>
+                        <button onclick="editMessage({{ chat[0] }})" style="background: none; border: none; cursor: pointer; opacity: 0.5; font-size: 14px; transition: 0.2s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.5" title="Edit prompt">✏️</button>
+                    </div>
+                </div>
+                {% else %}
+                <div class="bot-message">
+                    <div class="bot-bubble">
+                        {{ chat[2]|safe }}
+                    </div>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <form method="POST" action="/send" class="chat-input">
+            <input type="text" name="message" placeholder="Type your message..." required>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+</div>
+
+<div id="peer-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 20px; border-radius: 12px; width: 700px; max-width: 90%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+        <h2 style="margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px;">Peer Break Room</h2>
+        <p id="peer-status" style="font-weight: bold; margin-bottom: 15px; color: #007bff; font-size: 18px;">Looking for a study buddy...</p>
+        
+        <div id="peer-game-area" style="display: none; justify-content: space-between; gap: 20px; text-align: left;">
+            <div style="flex: 1; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                <h3 style="margin-top: 0; text-align: center;">Game</h3>
+                <p id="peer-turn-status" style="text-align: center; font-weight: bold; margin-bottom: 10px;"></p>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 15px;">
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(0)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(1)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(2)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(3)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(4)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(5)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(6)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(7)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                    <button class="peer-ttt-cell" onclick="peerPlayMove(8)" style="height: 80px; font-size: 36px; background: white; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+                </div>
+            </div>
+
+            <div style="flex: 1; display: flex; flex-direction: column; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                <h3 style="margin-top: 0;">Live Chat</h3>
+                <div id="peer-chat-box" style="flex: 1; height: 200px; overflow-y: auto; background: white; border: 1px solid #ddd; border-radius: 5px; padding: 10px; margin-bottom: 10px; font-size: 14px;">
+                    <p style="color: #888; text-align: center; margin-top: 50px;">Say hi to your study buddy!</p>
+                </div>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="peer-chat-input" placeholder="Type a message..." style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" onkeypress="handlePeerChatEnter(event)">
+                    <button onclick="sendPeerMessage()" style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <button onclick="closePeerMatch()" style="padding: 10px 20px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 4px; font-weight: bold;">🚪 Leave Room</button>
+        </div>
+    </div>
+</div>
+
+<div id="tictactoe-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 20px; border-radius: 10px; width: 300px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+        <h2 style="margin-top: 0; color: #333;">Solo Tic-Tac-Toe</h2>
+        <p id="ttt-status" style="font-weight: bold; margin-bottom: 15px;">You are ❌. Your turn!</p>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-bottom: 15px;" id="ttt-board">
+            <button class="ttt-cell" onclick="playerMove(0)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(1)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(2)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(3)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(4)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(5)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(6)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(7)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+            <button class="ttt-cell" onclick="playerMove(8)" style="height: 80px; font-size: 36px; background: #f9f9f9; border: 2px solid #ddd; border-radius: 5px; cursor: pointer;"></button>
+        </div>
+        <button onclick="resetTicTacToe()" style="padding: 8px 15px; margin-right: 10px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;">Restart</button>
+        <button onclick="closeTicTacToe()" style="padding: 8px 15px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 4px;">Close</button>
+    </div>
+</div>
+
+<div id="rps-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 20px; border-radius: 10px; width: 300px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+        <h2 style="margin-top: 0; color: #333;">Rock Paper Scissors</h2>
+        <p id="rps-status" style="font-weight: bold; margin-bottom: 15px;">Make your choice!</p>
+        <div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
+            <button onclick="playRPS('🪨')" style="font-size: 40px; background: none; border: none; cursor: pointer; transition: transform 0.2s;">🪨</button>
+            <button onclick="playRPS('📄')" style="font-size: 40px; background: none; border: none; cursor: pointer; transition: transform 0.2s;">📄</button>
+            <button onclick="playRPS('✂️')" style="font-size: 40px; background: none; border: none; cursor: pointer; transition: transform 0.2s;">✂️</button>
+        </div>
+        <button onclick="closeRPS()" style="padding: 8px 15px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 4px;">Close</button>
+    </div>
+</div>
+
+<div id="bubble-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 20px; border-radius: 10px; width: 320px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+        <h2 style="margin-top: 0; color: #333;">Bubble Wrap</h2>
+        <p style="font-size: 14px; margin-bottom: 15px;">Pop the bubbles to relieve stress!</p>
+        <div id="bubble-container" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px;"></div>
+        <button onclick="resetBubbles()" style="padding: 8px 15px; margin-right: 10px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px;">New Sheet</button>
+        <button onclick="closeBubbleWrap()" style="padding: 8px 15px; cursor: pointer; background: #dc3545; color: white; border: none; border-radius: 4px;">Close</button>
+    </div>
+</div>
+
+<div id="braindump-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center;">
+    <div id="shredder-box" style="background: #fff8e1; padding: 30px; border-radius: 10px; width: 450px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: transform 1s ease-in, opacity 1s ease-in;">
+        <div id="shredder-content">
+            <h2 style="margin-top: 0; color: #333;">Digital Brain Dump</h2>
+            <p style="font-size: 14px; color: #555; margin-bottom: 15px;">Type out every stressful thought and let it go.</p>
+            <textarea id="dump-text" rows="7" style="width: 100%; padding: 12px; border: 2px solid #ccc; border-radius: 6px; font-family: inherit; font-size: 15px; resize: none; margin-bottom: 15px; background: white; box-sizing: border-box;" placeholder="I'm terrified I'm going to run out of time..."></textarea>
+            <button onclick="shredThought()" style="padding: 12px 20px; background: #d32f2f; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px; width: 100%; transition: background 0.3s;">🔥 Let It Go (Burn & Shred)</button>
+            <button onclick="closeBrainDump()" style="margin-top: 15px; padding: 5px 10px; background: transparent; color: #888; border: none; cursor: pointer; text-decoration: underline;">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+
+/* ================= 📜 AUTO-SCROLL TO BOTTOM ================= */
+// 1. The function that calculates the height and scrolls down
+function scrollToBottom() {
+    const chatBox = document.querySelector('.chat-box');
+    if (chatBox) {
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+}
+
+// 2. Automatically run it the moment the page loads
+document.addEventListener("DOMContentLoaded", function() {
+    // Note: We put a tiny 10-millisecond delay here just to make sure 
+    // your Markdown parser finishes rendering tables before we calculate the height!
+    setTimeout(scrollToBottom, 10);
+});
+/* ================= 🔌 REAL-TIME MULTIPLAYER (SOCKET.IO) ================= */
+// FIX: Initialize immediately at top
+const socket = io();
+
+let peerRoom = null;
+let myPeerRole = null; 
+let isMyTurn = false;
+let peerBoard = ["", "", "", "", "", "", "", "", ""];
+
+function startPeerMatch() {
+    document.getElementById("peer-modal").style.display = "flex";
+    document.getElementById("peer-game-area").style.display = "none";
+    document.getElementById("peer-status").innerText = "Looking for a study buddy...";
+    document.getElementById("peer-chat-box").innerHTML = '<p style="color: #888; text-align: center; margin-top: 50px;">Say hi to your study buddy!</p>';
+    
+    socket.emit("find_match");
+}
+
+function closePeerMatch() {
+    document.getElementById("peer-modal").style.display = "none";
+    location.reload(); 
+}
+
+socket.on("waiting", function(data) {
+    document.getElementById("peer-status").innerText = data.message;
+});
+
+socket.on("match_found", function(data) {
+    peerRoom = data.room;
+    myPeerRole = data.role;
+    isMyTurn = (myPeerRole === "❌"); 
+    
+    document.getElementById("peer-status").innerText = data.message + ` You are ${myPeerRole}.`;
+    document.getElementById("peer-turn-status").innerText = isMyTurn ? "Your Turn!" : "Waiting for opponent...";
+    document.getElementById("peer-turn-status").style.color = isMyTurn ? "#28a745" : "#dc3545";
+    
+    document.getElementById("peer-game-area").style.display = "flex";
+    resetPeerBoardUI();
+});
+
+function peerPlayMove(index) {
+    if (!isMyTurn || peerBoard[index] !== "") return;
+
+    peerBoard[index] = myPeerRole;
+    updatePeerBoardUI();
+    isMyTurn = false;
+
+    socket.emit("play_move", { room: peerRoom, index: index, player: myPeerRole });
+
+    if (checkPeerWin(myPeerRole)) {
+        document.getElementById("peer-turn-status").innerText = "You Win! 🎉";
+        document.getElementById("peer-turn-status").style.color = "#28a745";
+        return;
+    }
+    if (!peerBoard.includes("")) {
+        document.getElementById("peer-turn-status").innerText = "It's a Draw! 🤝";
+        document.getElementById("peer-turn-status").style.color = "#ff9800";
+        return;
+    }
+    document.getElementById("peer-turn-status").innerText = "Waiting for opponent...";
+    document.getElementById("peer-turn-status").style.color = "#dc3545";
+}
+
+socket.on("receive_move", function(data) {
+    peerBoard[data.index] = data.player;
+    updatePeerBoardUI();
+    
+    if (checkPeerWin(data.player)) {
+        document.getElementById("peer-turn-status").innerText = "Opponent Wins! 💻";
+        document.getElementById("peer-turn-status").style.color = "#dc3545";
+        isMyTurn = false;
+        return;
+    }
+    if (!peerBoard.includes("")) {
+        document.getElementById("peer-turn-status").innerText = "It's a Draw! 🤝";
+        document.getElementById("peer-turn-status").style.color = "#ff9800";
+        isMyTurn = false;
+        return;
+    }
+
+    isMyTurn = true;
+    document.getElementById("peer-turn-status").innerText = "Your Turn!";
+    document.getElementById("peer-turn-status").style.color = "#28a745";
+});
+
+function checkPeerWin(playerRole) {
+    const peerWinConditions = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8],
+        [0, 3, 6], [1, 4, 7], [2, 5, 8],
+        [0, 4, 8], [2, 4, 6]
+    ];
+    return peerWinConditions.some(condition => {
+        return condition.every(index => peerBoard[index] === playerRole);
+    });
+}
+
+function updatePeerBoardUI() {
+    const cells = document.getElementsByClassName("peer-ttt-cell");
+    for (let i = 0; i < cells.length; i++) {
+        cells[i].innerText = peerBoard[i];
+    }
+}
+
+function resetPeerBoardUI() {
+    peerBoard = ["", "", "", "", "", "", "", "", ""];
+    updatePeerBoardUI();
+}
+
+function sendPeerMessage() {
+    const input = document.getElementById("peer-chat-input");
+    const text = input.value.trim();
+    if (text === "" || !peerRoom) return;
+
+    const chatBox = document.getElementById("peer-chat-box");
+    chatBox.innerHTML += `<div style="text-align: right; margin-bottom: 8px;"><span style="background: #007bff; color: white; padding: 5px 10px; border-radius: 12px; display: inline-block;">${text}</span></div>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+    input.value = "";
+
+    const myExactName = "{{ name }}";
+    socket.emit("send_peer_message", { room: peerRoom, text: text, sender: myExactName });
+}
+
+function handlePeerChatEnter(event) {
+    if (event.key === "Enter") sendPeerMessage();
+}
+
+socket.on("receive_peer_message", function(data) {
+    const chatBox = document.getElementById("peer-chat-box");
+    chatBox.innerHTML += `<div style="text-align: left; margin-bottom: 8px;"><span style="font-size: 11px; color: #888; display: block;">${data.sender}</span><span style="background: #e9ecef; color: #333; padding: 5px 10px; border-radius: 12px; display: inline-block;">${data.text}</span></div>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+});
+
+/* ================= 🧘 RELAXATION SCRIPTS ================= */
+let audioFiles = [
+    "{{ url_for('static', filename='audio/calm1.mp3') }}",
+    "{{ url_for('static', filename='audio/calm2.mp3') }}",
+    "{{ url_for('static', filename='audio/calm3.mp3') }}"
+];
+let player = document.getElementById("meditationPlayer");
+function startMeditation() { player.src = audioFiles[Math.floor(Math.random()*audioFiles.length)]; player.play(); }
+function stopMeditation() { player.pause(); player.currentTime = 0; }
+
+let breathInterval;
+function startBreathing() { 
+    let circle = document.getElementById("circle"); 
+    let text = document.getElementById("breathText"); 
+    let phase = 0; 
+    breathInterval = setInterval(()=>{ 
+        if(phase==0){ text.innerHTML="Inhale"; circle.classList.add("expand"); } 
+        else if(phase==1){ text.innerHTML="Hold"; } 
+        else{ text.innerHTML="Exhale"; circle.classList.remove("expand"); } 
+        phase = (phase+1)%3; 
+    },4000); 
+}
+function stopBreathing() { clearInterval(breathInterval); document.getElementById("breathText").innerHTML="Press Start"; }
+
+/* ================= 🎮 SOLO GAMES ================= */
+// SOLO TIC-TAC-TOE
+let tttBoard = ["", "", "", "", "", "", "", "", ""];
+let gameActive = false;
+const winConditions = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+function openTicTacToe() { document.getElementById("tictactoe-modal").style.display = "flex"; resetTicTacToe(); }
+function closeTicTacToe() { document.getElementById("tictactoe-modal").style.display = "none"; }
+function playerMove(index) {
+    if (tttBoard[index] !== "" || !gameActive) return;
+    tttBoard[index] = "❌"; updateBoardUI();
+    if (checkWin("❌")) { endGame("You Win! 🎉"); return; }
+    if (!tttBoard.includes("")) { endGame("It's a Draw! 🤝"); return; }
+    document.getElementById("ttt-status").innerText = "Computer is thinking..."; gameActive = false;
+    setTimeout(() => { computerMove(); }, 600);
+}
+function computerMove() {
+    let emptySpots = []; for (let i = 0; i < tttBoard.length; i++) { if (tttBoard[i] === "") emptySpots.push(i); }
+    if (emptySpots.length > 0) {
+        let randomIndex = emptySpots[Math.floor(Math.random() * emptySpots.length)];
+        tttBoard[randomIndex] = "⭕"; updateBoardUI();
+        if (checkWin("⭕")) { endGame("Computer Wins! 💻"); return; }
+        if (!tttBoard.includes("")) { endGame("It's a Draw! 🤝"); return; }
+    }
+    document.getElementById("ttt-status").innerText = "Your turn! ❌"; gameActive = true;
+}
+function checkWin(p) { return winConditions.some(c => c.every(i => tttBoard[i] === p)); }
+function updateBoardUI() {
+    const cells = document.getElementsByClassName("ttt-cell");
+    for (let i = 0; i < cells.length; i++) {
+        cells[i].innerText = tttBoard[i];
+        cells[i].style.color = tttBoard[i] === "❌" ? "#dc3545" : "#007bff";
+    }
+}
+function endGame(m) { document.getElementById("ttt-status").innerText = m; gameActive = false; }
+function resetTicTacToe() { tttBoard = ["", "", "", "", "", "", "", "", ""]; gameActive = true; document.getElementById("ttt-status").innerText = "You are ❌. Your turn!"; updateBoardUI(); }
+
+// RPS & BUBBLE WRAP
+function openRPS() { document.getElementById("rps-modal").style.display = "flex"; document.getElementById("rps-status").innerText = "Make your choice!"; }
+function closeRPS() { document.getElementById("rps-modal").style.display = "none"; }
+function playRPS(p) {
+    const choices = ['🪨', '📄', '✂️']; const c = choices[Math.floor(Math.random() * 3)];
+    let res = p === c ? "It's a tie! 😐" : ((p==='🪨'&&c==='✂️')||(p==='📄'&&c==='🪨')||(p==='✂️'&&c==='📄')) ? "You win! 🎉" : "Computer wins! 💻";
+    document.getElementById("rps-status").innerHTML = `You: ${p} vs Comp: ${c}<br><br><span style="color: #007bff;">${res}</span>`;
+}
+function openBubbleWrap() { document.getElementById("bubble-modal").style.display = "flex"; resetBubbles(); }
+function closeBubbleWrap() { document.getElementById("bubble-modal").style.display = "none"; }
+function resetBubbles() {
+    const container = document.getElementById("bubble-container"); container.innerHTML = "";
+    for (let i = 0; i < 25; i++) {
+        let b = document.createElement("div");
+        b.className = "bubble"; // Style via CSS if possible
+        b.style = "width:40px;height:40px;background:#add8e6;border-radius:50%;cursor:pointer;display:flex;justify-content:center;align-items:center;";
+        b.onclick = function() { this.style.background = "transparent"; this.innerHTML = "pop!"; };
+        container.appendChild(b);
+    }
+}
+
+/* ================= 🗑️ BRAIN DUMP ================= */
+function openBrainDump() {
+    const box = document.getElementById("shredder-box");
+    const content = document.getElementById("shredder-content");
+    const textArea = document.getElementById("dump-text");
+
+    // RESET: Ensure the box is visible and centered every time it opens
+    box.style.opacity = "1";
+    box.style.transform = "translateY(0) scale(1) rotate(0deg)";
+    content.style.display = "block";
+    textArea.value = ""; // Clear previous text
+    
+    // Remove any old "Burning" message if it exists
+    const oldMsg = document.getElementById("shred-message");
+    if (oldMsg) oldMsg.remove();
+
+    document.getElementById("braindump-modal").style.display = "flex";
+}
+
+function closeBrainDump() {
+    document.getElementById("braindump-modal").style.display = "none";
+}
+
+function shredThought() {
+    const textArea = document.getElementById("dump-text");
+    const text = textArea.value.trim();
+    if (!text) return;
+
+    // 1. Send to backend
+    fetch("/shred", { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ thought: text }) 
+    });
+
+    const box = document.getElementById("shredder-box");
+    const content = document.getElementById("shredder-content");
+
+    // 2. Hide the input area immediately
+    content.style.display = "none";
+
+    // 3. Create and show the "shredding" feedback
+    const msg = document.createElement("h3");
+    msg.id = "shred-message";
+    msg.innerHTML = "🔥 Shredding & Burning... 🔥<br><span style='font-size:12px; font-weight:normal;'>Letting it go.</span>";
+    msg.style.color = "#d32f2f";
+    msg.style.padding = "20px";
+    box.appendChild(msg);
+
+    // 4. Trigger the "falling away" animation
+    setTimeout(() => {
+        box.style.transition = "transform 1s ease-in, opacity 1s ease-in";
+        box.style.transform = "translateY(200px) scale(0.2) rotate(15deg)";
+        box.style.opacity = "0";
+    }, 100);
+
+    // 5. Close the modal after animation ends
+    setTimeout(() => {
+        closeBrainDump();
+    }, 1100);
+}
+/* ================= ✏️ EDIT LOGIC ================= */
+function editMessage(msgId) {
+    const textSpan = document.getElementById('msg-text-' + msgId);
+    const currentText = textSpan.innerText;
+    const container = document.getElementById('msg-container-' + msgId);
+    container.innerHTML = `
+        <div class="user-bubble" style="display:flex; flex-direction:column; width:80%;">
+            <textarea id="edit-area-${msgId}" rows="3" style="width:100%;">${currentText}</textarea>
+            <div style="margin-top:8px;">
+                <button onclick="location.reload()">Cancel</button>
+                <button onclick="submitEdit(${msgId})">Save & Submit</button>
+            </div>
+        </div>`;
+}
+function submitEdit(msgId) {
+    const newText = document.getElementById('edit-area-' + msgId).value.trim();
+    if (!newText) return;
+    fetch("/delete_from_message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message_id: msgId }) })
+    .then(() => {
+        const form = document.querySelector('.chat-input');
+        form.querySelector('input').value = newText;
+        form.submit();
+    });
+}
+</script>
+
+</body>
+</html>
